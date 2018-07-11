@@ -442,6 +442,49 @@ class GroupWindowITCase extends AbstractTestBase {
       "null,1,1970-01-01 00:00:00.03,1970-01-01 00:00:00.033")
     assertEquals(expected.sorted, StreamITCase.testResults.sorted)
   }
+
+  @Test
+  def testEventTimeSlidingWindowNonOverlapping(): Unit = {
+
+    val data = List(
+      (3L, 2, "Hello"),
+      (6L, 3, "Hello"),
+      (4L, 5, "Hello")
+    )
+
+    val env = StreamExecutionEnvironment.getExecutionEnvironment
+    env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
+    val tEnv = TableEnvironment.getTableEnvironment(env)
+    StreamITCase.testResults = mutable.MutableList()
+
+    val stream = env
+      .fromCollection(data)
+      .assignTimestampsAndWatermarks(new TimestampAndWatermarkWithOffset[(Long, Int, String)](0L))
+    val table = stream.toTable(tEnv, 'long, 'int, 'string, 'rowtime.rowtime)
+
+//    table.toAppendStream[Row].print()
+
+    val windowedTable1 = table
+      .window(Slide over 5.milli every 10.milli on 'rowtime as 'w)
+
+//    windowedTable1.table.toAppendStream[Row].print()
+
+    val windowedTable = windowedTable1
+      .groupBy('w)
+      .select('int.count, 'int.sum, 'w.start, 'w.end)
+
+    val results = windowedTable.toAppendStream[Row]
+    results.addSink(new StreamITCase.StringSink[Row])
+
+    results.print()
+
+    env.execute()
+
+    val expected = Seq(
+    "2,7,1970-01-01 00:00:00.0,1970-01-01 00:00:00.005")
+    assertEquals(expected.sorted, StreamITCase.testResults.sorted)
+  }
+
 }
 
 object GroupWindowITCase {
